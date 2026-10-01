@@ -26,11 +26,12 @@ button.danger { color:#7b1515; border-color:#9c2d2d; }
 button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,[tabindex]:focus-visible { outline:4px solid var(--focus); outline-offset:2px; }
 .button-row { display:grid; grid-template-columns:1fr 1fr; gap:.4rem; }
 .status { padding:.7rem; border-left:5px solid var(--warn); background:#fff2e7; }
+#imageLoadStatus { white-space:pre-line; }
 .workspace { min-width:0; padding:1rem; }
 .context { display:flex; flex-wrap:wrap; gap:.6rem 1.25rem; align-items:center; margin-bottom:.7rem; }
 .context strong { color:var(--navy); }
 .stage { position:relative; width:100%; overflow:hidden; border:2px solid #536474; background:#d8dde1; touch-action:none; }
-.stage img { display:block; width:100%; height:auto; user-select:none; -webkit-user-drag:none; }
+.stage img { display:block; width:100%; height:auto; object-fit:contain; user-select:none; -webkit-user-drag:none; }
 .stage svg { position:absolute; inset:0; width:100%; height:100%; }
 .region-shape { stroke:#002f51; stroke-width:.004; vector-effect:non-scaling-stroke; }
 .draft-line { fill:none; stroke:#b40000; stroke-width:.004; stroke-dasharray:.012 .008; vector-effect:non-scaling-stroke; }
@@ -101,7 +102,7 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
       <span>Target: <strong id="currentTarget">Anterior lobe</strong></span>
       <span>Orientation: use the printed labels in the complete source plate; the image is not cropped or distorted.</span>
     </div>
-    <p class="status" id="imageLoadStatus" role="status" aria-live="polite">Loading the canonical private-repository source image…</p>
+    <p class="status" id="imageLoadStatus" role="status" aria-live="polite">Loading cerebellum source illustration…</p>
     <div class="stage" id="stage">
       <img id="sourceImage" alt="Human-supplied cerebellum illustration containing superior and inferior views">
       <svg id="overlay" viewBox="0 0 1 1" preserveAspectRatio="none" role="group" aria-label="Editable normalized polygon overlay"></svg>
@@ -121,8 +122,8 @@ const TARGETS = {
 };
 const VIEWS = ['superior','inferior'];
 const IMAGE_SOURCES = [
-  {url:'../source-material/Cerebellum_Netters%20image.jpg', label:'canonical private-repository-relative path'},
-  {url:'Cerebellum_Netters%20image.jpg', label:'same-directory preview path'}
+  '../source-material/cerebellum-netters.jpg',
+  'cerebellum-netters.jpg'
 ];
 const regions = Object.fromEntries(VIEWS.flatMap(view => Object.keys(TARGETS).map(target => [`${view}:${target}`, {
   target, targetName:TARGETS[target], view, coordinateSystem:'normalized-image-relative', status:'UNDEFINED',
@@ -139,16 +140,19 @@ function announce(message){ $('statusMessage').textContent=message; }
 function attemptImageSource(index){
   imageSourceIndex=index;
   const source=IMAGE_SOURCES[index];
-  $('imageLoadStatus').textContent=`Loading source image from ${source.label}: ${decodeURIComponent(source.url)}`;
-  sourceImage.src=source.url;
+  $('imageLoadStatus').textContent=`Loading cerebellum source illustration…\nPath: ${source}`;
+  sourceImage.src=source;
 }
 sourceImage.addEventListener('load',()=>{
   const source=IMAGE_SOURCES[imageSourceIndex];
-  $('imageLoadStatus').textContent=`Source image loaded from ${source.label}: ${decodeURIComponent(source.url)}`;
+  const fallbackNotice=imageSourceIndex===1
+    ? 'Canonical repository path unavailable in this preview environment. Same-directory preview image loaded successfully.\n'
+    : '';
+  $('imageLoadStatus').textContent=`SOURCE IMAGE LOADED SUCCESSFULLY\n${fallbackNotice}Path: ${source}\nNatural dimensions: ${sourceImage.naturalWidth} × ${sourceImage.naturalHeight} px\nDisplay mode: aspect ratio preserved; no cropping.`;
 });
 sourceImage.addEventListener('error',()=>{
   if(imageSourceIndex+1<IMAGE_SOURCES.length){ attemptImageSource(imageSourceIndex+1); return; }
-  $('imageLoadStatus').textContent='SOURCE IMAGE FAILED TO LOAD: neither the canonical private-repository-relative path nor the same-directory preview path resolved.';
+  $('imageLoadStatus').textContent=`SOURCE IMAGE FAILED TO LOAD\nAttempted paths:\n- ${IMAGE_SOURCES.join('\n- ')}`;
 });
 function pointerPosition(event){ const r=overlay.getBoundingClientRect(); return {x:rounded(clamp((event.clientX-r.left)/r.width)),y:rounded(clamp((event.clientY-r.top)/r.height))}; }
 function setPoint(index,p){ const region=current(); region.points[index]={x:rounded(clamp(p.x)),y:rounded(clamp(p.y))}; if(region.status==='HUMAN-APPROVED'){ region.status='PROVISIONAL'; region.humanReviewStatus='REVIEW REQUIRED AFTER EDIT'; } render(); }
@@ -183,7 +187,7 @@ $('visibilityButton').addEventListener('click',()=>{ current().visible=!current(
 $('opacityControl').addEventListener('input',e=>{ $('opacityValue').textContent=`${e.target.value}%`; render(); });
 $('approveButton').addEventListener('click',()=>{ const r=current(); if(!r.closed || r.points.length<3){announce('Close a polygon with at least three points before explicit approval.');return;} r.status='HUMAN-APPROVED';r.humanReviewStatus='HUMAN APPROVED BY EXPLICIT CONTROL';announce('Expert action recorded: current region marked HUMAN-APPROVED. Inspect and export the data.');render(); });
 $('reopenButton').addEventListener('click',()=>{ const r=current(); if(!r.points.length){announce('This region is undefined.');return;} r.status='PROVISIONAL';r.humanReviewStatus='AWAITING HUMAN APPROVAL';announce('Current region returned to PROVISIONAL.');render(); });
-function exportData(){ return {schemaVersion:'EXP-CER-001-calibration-v1',sourceImage:'games/cerebellum/source-material/Cerebellum_Netters image.jpg',governance:'Human-authored geometry; HUMAN-APPROVED requires explicit expert action.',regions:Object.values(regions).map(({checkpoint,...r})=>({...r,points:r.points.map(p=>({x:rounded(p.x),y:rounded(p.y)}))}))}; }
+function exportData(){ return {schemaVersion:'EXP-CER-001-calibration-v1',sourceImage:'games/cerebellum/source-material/cerebellum-netters.jpg',governance:'Human-authored geometry; HUMAN-APPROVED requires explicit expert action.',regions:Object.values(regions).map(({checkpoint,...r})=>({...r,points:r.points.map(p=>({x:rounded(p.x),y:rounded(p.y)}))}))}; }
 function refreshOutput(){ const data=exportData(), r=current(); $('exportOutput').textContent=`CURRENT: ${r.view.toUpperCase()} VIEW — ${r.targetName}\nStatus: ${r.status}; review: ${r.humanReviewStatus}; ${r.points.length} normalized point(s)\n\n${JSON.stringify(data,null,2)}`; }
 $('refreshOutputButton').addEventListener('click',()=>{refreshOutput();announce('Readable summary refreshed.');});
 $('copyButton').addEventListener('click',async()=>{ const text=JSON.stringify(exportData(),null,2); try{await navigator.clipboard.writeText(text);announce('Calibration JSON copied to the clipboard.');}catch(_){$('exportOutput').textContent=text;$('exportOutput').focus?.();announce('Clipboard access was unavailable. JSON is displayed below for manual copying.');} });
