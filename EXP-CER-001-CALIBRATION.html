@@ -101,8 +101,9 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
       <span>Target: <strong id="currentTarget">Anterior lobe</strong></span>
       <span>Orientation: use the printed labels in the complete source plate; the image is not cropped or distorted.</span>
     </div>
+    <p class="status" id="imageLoadStatus" role="status" aria-live="polite">Loading the canonical private-repository source image…</p>
     <div class="stage" id="stage">
-      <img id="sourceImage" src="../source-material/Cerebellum_Netters%20image.jpg" alt="Human-supplied cerebellum illustration containing superior and inferior views">
+      <img id="sourceImage" alt="Human-supplied cerebellum illustration containing superior and inferior views">
       <svg id="overlay" viewBox="0 0 1 1" preserveAspectRatio="none" role="group" aria-label="Editable normalized polygon overlay"></svg>
     </div>
     <p class="help"><strong>Instructions:</strong> Select the layer and target, then click the appropriate anatomy in the source plate to add points. Drag a visible vertex to reposition it, or focus it with Tab and use the arrow keys (Shift for larger steps). “Close polygon” records a reset checkpoint. The superior/inferior selector changes the data layer; the complete plate remains visible so no anatomy is cropped. Only calibrate a target on a view when you judge it anatomically suitable.</p>
@@ -119,17 +120,36 @@ const TARGETS = {
   'lateral-hemisphere':'Lateral hemisphere'
 };
 const VIEWS = ['superior','inferior'];
+const IMAGE_SOURCES = [
+  {url:'../source-material/Cerebellum_Netters%20image.jpg', label:'canonical private-repository-relative path'},
+  {url:'Cerebellum_Netters%20image.jpg', label:'same-directory preview path'}
+];
 const regions = Object.fromEntries(VIEWS.flatMap(view => Object.keys(TARGETS).map(target => [`${view}:${target}`, {
   target, targetName:TARGETS[target], view, coordinateSystem:'normalized-image-relative', status:'UNDEFINED',
   humanReviewStatus:'NOT REVIEWED', note:'', points:[], closed:false, visible:true, checkpoint:[]
 }])));
 const $ = id => document.getElementById(id);
-const overlay=$('overlay'), stage=$('stage'), viewSelect=$('viewSelect'), targetSelect=$('targetSelect');
+const overlay=$('overlay'), stage=$('stage'), sourceImage=$('sourceImage'), viewSelect=$('viewSelect'), targetSelect=$('targetSelect');
 let draggingIndex=null;
+let imageSourceIndex=0;
 const current=()=>regions[`${viewSelect.value}:${targetSelect.value}`];
 const clamp=n=>Math.max(0,Math.min(1,n));
 const rounded=n=>Number(n.toFixed(6));
 function announce(message){ $('statusMessage').textContent=message; }
+function attemptImageSource(index){
+  imageSourceIndex=index;
+  const source=IMAGE_SOURCES[index];
+  $('imageLoadStatus').textContent=`Loading source image from ${source.label}: ${decodeURIComponent(source.url)}`;
+  sourceImage.src=source.url;
+}
+sourceImage.addEventListener('load',()=>{
+  const source=IMAGE_SOURCES[imageSourceIndex];
+  $('imageLoadStatus').textContent=`Source image loaded from ${source.label}: ${decodeURIComponent(source.url)}`;
+});
+sourceImage.addEventListener('error',()=>{
+  if(imageSourceIndex+1<IMAGE_SOURCES.length){ attemptImageSource(imageSourceIndex+1); return; }
+  $('imageLoadStatus').textContent='SOURCE IMAGE FAILED TO LOAD: neither the canonical private-repository-relative path nor the same-directory preview path resolved.';
+});
 function pointerPosition(event){ const r=overlay.getBoundingClientRect(); return {x:rounded(clamp((event.clientX-r.left)/r.width)),y:rounded(clamp((event.clientY-r.top)/r.height))}; }
 function setPoint(index,p){ const region=current(); region.points[index]={x:rounded(clamp(p.x)),y:rounded(clamp(p.y))}; if(region.status==='HUMAN-APPROVED'){ region.status='PROVISIONAL'; region.humanReviewStatus='REVIEW REQUIRED AFTER EDIT'; } render(); }
 function render(){
@@ -167,6 +187,7 @@ function exportData(){ return {schemaVersion:'EXP-CER-001-calibration-v1',source
 function refreshOutput(){ const data=exportData(), r=current(); $('exportOutput').textContent=`CURRENT: ${r.view.toUpperCase()} VIEW — ${r.targetName}\nStatus: ${r.status}; review: ${r.humanReviewStatus}; ${r.points.length} normalized point(s)\n\n${JSON.stringify(data,null,2)}`; }
 $('refreshOutputButton').addEventListener('click',()=>{refreshOutput();announce('Readable summary refreshed.');});
 $('copyButton').addEventListener('click',async()=>{ const text=JSON.stringify(exportData(),null,2); try{await navigator.clipboard.writeText(text);announce('Calibration JSON copied to the clipboard.');}catch(_){$('exportOutput').textContent=text;$('exportOutput').focus?.();announce('Clipboard access was unavailable. JSON is displayed below for manual copying.');} });
+attemptImageSource(0);
 render();
 </script>
 </body>
