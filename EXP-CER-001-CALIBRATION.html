@@ -25,6 +25,7 @@ button.primary { color:white; background:var(--blue); border-color:#005b82; }
 button.danger { color:#7b1515; border-color:#9c2d2d; }
 button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,[tabindex]:focus-visible { outline:4px solid var(--focus); outline-offset:2px; }
 .button-row { display:grid; grid-template-columns:1fr 1fr; gap:.4rem; }
+.backup-guidance { padding:.65rem; border:1px solid #c07522; background:#fff7e8; font-size:.9rem; }
 .status { padding:.7rem; border-left:5px solid var(--warn); background:#fff2e7; }
 #imageLoadStatus { white-space:pre-line; }
 .workspace { min-width:0; padding:1rem; }
@@ -37,10 +38,17 @@ button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-vis
 .stage { position:relative; width:100%; min-width:1px; overflow:hidden; background:#d8dde1; touch-action:none; }
 .stage img { display:block; width:100%; height:auto; object-fit:contain; user-select:none; -webkit-user-drag:none; }
 .stage svg { position:absolute; inset:0; width:100%; height:100%; }
-.region-shape { stroke:#002f51; stroke-width:.004; vector-effect:non-scaling-stroke; }
-.draft-line { fill:none; stroke:#b40000; stroke-width:.004; stroke-dasharray:.012 .008; vector-effect:non-scaling-stroke; }
-.handle { fill:#fff; stroke:#9b0000; stroke-width:.003; vector-effect:non-scaling-stroke; cursor:grab; }
-.handle:focus { fill:var(--focus); outline:none; }
+.region-shape { stroke:#002f51; stroke-width:1.5px; vector-effect:non-scaling-stroke; }
+.draft-line { fill:none; stroke:#b40000; stroke-width:1.5px; stroke-dasharray:6px 4px; vector-effect:non-scaling-stroke; }
+.handle-hit { fill:transparent; stroke:none; cursor:grab; }
+.handle-marker { fill:#fff; stroke:#9b0000; stroke-width:1.5px; vector-effect:non-scaling-stroke; pointer-events:none; }
+.handle-group:focus .handle-marker { fill:var(--focus); }
+.handle-group:focus { outline:none; }
+.import-dialog { width:min(46rem,calc(100% - 2rem)); border:2px solid var(--navy); border-radius:.5rem; }
+.import-dialog::backdrop { background:#17212bcc; }
+.import-dialog textarea { min-height:14rem; font:13px/1.4 ui-monospace,monospace; }
+.import-error { color:#8b1111; font-weight:700; white-space:pre-wrap; }
+.import-summary { padding:.7rem; white-space:pre-wrap; border:1px solid #8d9aa6; background:#f8fafb; }
 .help { margin:.7rem 0 0; font-size:.92rem; }
 output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-space:pre-wrap; overflow-wrap:anywhere; border:1px solid #8d9aa6; background:#f8fafb; font:12px/1.45 ui-monospace,monospace; }
 .coordinate-readout { display:grid; grid-template-columns:repeat(2,minmax(11rem,1fr)); gap:.25rem 1rem; padding:.6rem; border:1px solid #8d9aa6; background:#f8fafb; font:600 14px/1.4 ui-monospace,monospace; }
@@ -89,13 +97,16 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
         <button id="resetButton" type="button">Reset region</button>
       </div>
       <button id="visibilityButton" type="button" aria-pressed="true">Region visible: ON</button>
+      <button id="handlesButton" type="button" aria-pressed="true">HIDE VERTEX HANDLES</button>
       <label for="opacityControl">Fill transparency: <span id="opacityValue">30%</span></label>
       <input id="opacityControl" type="range" min="0" max="70" value="30">
       <button id="approveButton" class="primary" type="button">Mark HUMAN-APPROVED</button>
       <button id="reopenButton" type="button">Return to PROVISIONAL</button>
     </fieldset>
     <fieldset>
-      <legend>Export</legend>
+      <legend>Calibration data backup</legend>
+      <p class="backup-guidance"><strong>Important:</strong> Human calibration data is not automatically stored in the repository. Export/copy the calibration JSON after each calibration session and before refreshing or closing this page.</p>
+      <button id="importButton" type="button">IMPORT CALIBRATION DATA</button>
       <button id="copyButton" class="primary" type="button">COPY CALIBRATION DATA</button>
       <button id="refreshOutputButton" type="button">Refresh readable summary</button>
     </fieldset>
@@ -138,6 +149,22 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
     <output id="exportOutput" aria-live="polite"></output>
   </section>
 </main>
+<dialog id="importDialog" class="import-dialog" aria-labelledby="importTitle">
+  <form method="dialog">
+    <h2 id="importTitle">Import / restore calibration data</h2>
+    <p>Paste previously exported EXP-CER-001 calibration JSON. Validation and a summary occur before any current data is changed.</p>
+    <label for="importText">Calibration JSON</label>
+    <textarea id="importText" spellcheck="false"></textarea>
+    <p id="importError" class="import-error" role="alert"></p>
+    <div id="importSummary" class="import-summary" hidden></div>
+    <p><strong>Import is technical restoration, not anatomical approval.</strong> Imported calibration data contains human-authored geometry but has not been anatomically approved unless its imported review status explicitly records prior human approval.</p>
+    <div class="button-row">
+      <button id="validateImportButton" type="button">VALIDATE &amp; REVIEW</button>
+      <button id="confirmImportButton" class="primary" type="button" disabled>CONFIRM IMPORT</button>
+      <button id="cancelImportButton" type="button">CANCEL</button>
+    </div>
+  </form>
+</dialog>
 <script>
 'use strict';
 const FRAMEWORKS = {
@@ -152,6 +179,8 @@ const FRAMEWORKS = {
 };
 const OVERLAP_POLICY = 'Cross-framework overlap is intentional; coordinates remain independent and unchanged.';
 const VIEWS = ['superior','inferior'];
+const EXPECTED_SOURCE_IMAGE = 'games/cerebellum/assets/cerebellum-game-atlas-v1.png';
+const SCHEMA_VERSION = 'EXP-CER-001-calibration-v2';
 const IMAGE_SOURCES = [
   '../assets/cerebellum-game-atlas-v1.png',
   'cerebellum-game-atlas-v1.png'
@@ -166,6 +195,10 @@ let draggingIndex=null;
 let selectedIndex=null;
 let imageSourceIndex=0;
 let zoomMode='fit';
+let handlesVisible=true;
+let hoveredIndex=null;
+let pendingImport=null;
+let hasUnexportedWork=false;
 const current=()=>regions[`${viewSelect.value}:${frameworkSelect.value}:${targetSelect.value}`];
 function populateTargets(){
   const previous=targetSelect.value;
@@ -206,7 +239,13 @@ function applyZoom(){
   $('zoomStatus').textContent=zoomMode==='fit'?'Fit':`${Math.round(zoomMode*100)}%`;
 }
 function setZoom(value){ zoomMode=value; applyZoom(); announce(`Display zoom set to ${zoomMode==='fit'?'Fit':`${Math.round(zoomMode*100)}%`}. Stored normalized coordinates are unchanged.`); }
-function setPoint(index,p){ const region=current(); region.points[index]={x:rounded(clamp(p.x)),y:rounded(clamp(p.y))}; if(region.status==='HUMAN-APPROVED'){ region.status='PROVISIONAL'; region.humanReviewStatus='REVIEW REQUIRED AFTER EDIT'; } render(); }
+function setPoint(index,p){ const region=current(); region.points[index]={x:rounded(clamp(p.x)),y:rounded(clamp(p.y))}; hasUnexportedWork=true; if(region.status==='HUMAN-APPROVED'){ region.status='PROVISIONAL'; region.humanReviewStatus='REVIEW REQUIRED AFTER EDIT'; } render(); }
+function handleRadii(index){
+  const bounds=overlay.getBoundingClientRect();
+  const pixels=index===selectedIndex ? 7.5 : index===hoveredIndex ? 6.5 : 4.5;
+  return {rx:pixels/(bounds.width||1000),ry:pixels/(bounds.height||1000),hitRx:12/(bounds.width||1000),hitRy:12/(bounds.height||1000)};
+}
+function updateHandleAppearance(){ overlay.querySelectorAll('.handle-group').forEach(group=>{ const index=Number(group.dataset.index), radii=handleRadii(index), marker=group.querySelector('.handle-marker'), hit=group.querySelector('.handle-hit'); marker.setAttribute('rx',radii.rx);marker.setAttribute('ry',radii.ry);hit.setAttribute('rx',radii.hitRx);hit.setAttribute('ry',radii.hitRy); }); }
 function render(){
   const region=current(); overlay.replaceChildren();
   if(region.visible && region.points.length){
@@ -216,37 +255,84 @@ function render(){
     shape.setAttribute('class',region.closed?'region-shape':'draft-line');
     shape.setAttribute('fill',region.closed?'#00a6d6':'none'); shape.setAttribute('fill-opacity',String(Number($('opacityControl').value)/100));
     overlay.append(shape);
-    region.points.forEach((p,index)=>{ const h=document.createElementNS(ns,'circle'); h.setAttribute('cx',p.x); h.setAttribute('cy',p.y); h.setAttribute('r','.009'); h.setAttribute('class','handle'); h.setAttribute('tabindex','0'); h.setAttribute('role','button'); h.setAttribute('aria-label',`Vertex ${index+1} at x ${p.x}, y ${p.y}`); h.setAttribute('aria-pressed',String(index===selectedIndex)); h.dataset.index=index; overlay.append(h); });
+    if(handlesVisible) region.points.forEach((p,index)=>{ const radii=handleRadii(index), group=document.createElementNS(ns,'g'), hit=document.createElementNS(ns,'ellipse'), marker=document.createElementNS(ns,'ellipse'); group.setAttribute('class','handle-group'); group.setAttribute('tabindex','0'); group.setAttribute('role','button'); group.setAttribute('aria-label',`Vertex ${index+1} at x ${p.x}, y ${p.y}`); group.setAttribute('aria-pressed',String(index===selectedIndex)); group.dataset.index=index; for(const element of [hit,marker]){element.setAttribute('cx',p.x);element.setAttribute('cy',p.y);} hit.setAttribute('rx',radii.hitRx);hit.setAttribute('ry',radii.hitRy);hit.setAttribute('class','handle-hit');marker.setAttribute('rx',radii.rx);marker.setAttribute('ry',radii.ry);marker.setAttribute('class','handle-marker');group.append(hit,marker);overlay.append(group); });
   }
   $('regionStatus').textContent=region.status; $('reviewStatus').textContent=region.humanReviewStatus; $('pointCount').textContent=region.points.length;
   $('expertNote').value=region.note; $('currentView').textContent=`${region.view.toUpperCase()} VIEW`; $('currentFramework').textContent=region.frameworkName; $('currentTarget').textContent=region.targetName;
   $('visibilityButton').textContent=`Region visible: ${region.visible?'ON':'OFF'}`; $('visibilityButton').setAttribute('aria-pressed',String(region.visible));
+  $('handlesButton').textContent=handlesVisible?'HIDE VERTEX HANDLES':'SHOW VERTEX HANDLES'; $('handlesButton').setAttribute('aria-pressed',String(handlesVisible));
   refreshOutput();
 }
 function markEdited(region){ region.closed=false; region.status=region.points.length?'PROVISIONAL':'UNDEFINED'; region.humanReviewStatus=region.humanReviewStatus==='HUMAN APPROVED'?'REVIEW REQUIRED AFTER EDIT':'NOT REVIEWED'; }
-overlay.addEventListener('pointerdown',e=>{ if(e.target.classList.contains('handle')){ draggingIndex=Number(e.target.dataset.index); selectedIndex=draggingIndex; showCoordinates(current().points[selectedIndex],`Selected vertex ${selectedIndex+1}`); overlay.setPointerCapture(e.pointerId); e.preventDefault(); return; } const region=current(); const point=pointerPosition(e); region.points.push(point); selectedIndex=region.points.length-1; showCoordinates(point,`Selected vertex ${selectedIndex+1}`); markEdited(region); announce(`Point ${region.points.length} added using normalized image coordinates.`); render(); });
+overlay.addEventListener('pointerdown',e=>{ const handle=e.target.closest?.('.handle-group'); if(handle){ draggingIndex=Number(handle.dataset.index); selectedIndex=draggingIndex; showCoordinates(current().points[selectedIndex],`Selected vertex ${selectedIndex+1}`); overlay.setPointerCapture(e.pointerId); e.preventDefault(); render(); return; } const region=current(); const point=pointerPosition(e); region.points.push(point); hasUnexportedWork=true; selectedIndex=region.points.length-1; showCoordinates(point,`Selected vertex ${selectedIndex+1}`); markEdited(region); announce(`Point ${region.points.length} added using normalized image coordinates.`); render(); });
 overlay.addEventListener('pointermove',e=>{ const point=pointerPosition(e); if(draggingIndex!==null){ setPoint(draggingIndex,point); showCoordinates(current().points[draggingIndex],`Selected vertex ${draggingIndex+1}`); } else showCoordinates(point); });
 overlay.addEventListener('pointerup',()=>{ draggingIndex=null; });
-overlay.addEventListener('focusin',e=>{ if(!e.target.classList.contains('handle'))return; selectedIndex=Number(e.target.dataset.index); showCoordinates(current().points[selectedIndex],`Selected vertex ${selectedIndex+1}`); });
-overlay.addEventListener('keydown',e=>{ if(!e.target.classList.contains('handle') || selectedIndex===null || Number(e.target.dataset.index)!==selectedIndex || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return; e.preventDefault(); const i=selectedIndex, p={...current().points[i]}, step=e.shiftKey ? .01 : .002; if(e.key==='ArrowLeft')p.x-=step;if(e.key==='ArrowRight')p.x+=step;if(e.key==='ArrowUp')p.y-=step;if(e.key==='ArrowDown')p.y+=step;setPoint(i,p);showCoordinates(current().points[i],`Selected vertex ${i+1}`);overlay.querySelector(`[data-index="${i}"]`)?.focus(); });
+overlay.addEventListener('pointerover',e=>{ const handle=e.target.closest?.('.handle-group'); if(handle){hoveredIndex=Number(handle.dataset.index);updateHandleAppearance();} });
+overlay.addEventListener('pointerout',e=>{ if(e.target.closest?.('.handle-group')){hoveredIndex=null;updateHandleAppearance();} });
+overlay.addEventListener('focusin',e=>{ const handle=e.target.closest?.('.handle-group'); if(!handle)return; selectedIndex=Number(handle.dataset.index); showCoordinates(current().points[selectedIndex],`Selected vertex ${selectedIndex+1}`); updateHandleAppearance(); });
+overlay.addEventListener('keydown',e=>{ const handle=e.target.closest?.('.handle-group'); if(!handle || selectedIndex===null || Number(handle.dataset.index)!==selectedIndex || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return; e.preventDefault(); const i=selectedIndex, p={...current().points[i]}, step=e.shiftKey ? .01 : .002; if(e.key==='ArrowLeft')p.x-=step;if(e.key==='ArrowRight')p.x+=step;if(e.key==='ArrowUp')p.y-=step;if(e.key==='ArrowDown')p.y+=step;setPoint(i,p);showCoordinates(current().points[i],`Selected vertex ${i+1}`);overlay.querySelector(`[data-index="${i}"]`)?.focus(); });
 [viewSelect,targetSelect].forEach(control=>control.addEventListener('change',()=>{selectedIndex=null;render();}));
 frameworkSelect.addEventListener('change',()=>{selectedIndex=null;populateTargets();render();});
 document.querySelectorAll('[data-zoom]').forEach(button=>button.addEventListener('click',()=>setZoom(button.dataset.zoom==='fit'?'fit':Number(button.dataset.zoom))));
 $('zoomInButton').addEventListener('click',()=>setZoom(zoomMode==='fit'?1.25:Math.min(2,rounded(zoomMode+.25))));
 $('zoomOutButton').addEventListener('click',()=>setZoom(zoomMode==='fit'?1:Math.max(1,rounded(zoomMode-.25))));
-$('expertNote').addEventListener('input',e=>{ current().note=e.target.value; refreshOutput(); });
-$('undoButton').addEventListener('click',()=>{ const r=current(); r.points.pop(); markEdited(r); announce('Most recent point deleted.'); render(); });
-$('clearButton').addEventListener('click',()=>{ const r=current(); r.points=[]; r.closed=false; r.status='UNDEFINED'; r.humanReviewStatus='NOT REVIEWED'; announce('Current region cleared. Its last closed checkpoint remains available to Reset.'); render(); });
-$('resetButton').addEventListener('click',()=>{ const r=current(); r.points=r.checkpoint.map(p=>({...p})); r.closed=r.points.length>=3; r.status=r.points.length?'PROVISIONAL':'UNDEFINED'; r.humanReviewStatus='NOT REVIEWED'; announce(r.points.length?'Region reset to its last closed checkpoint.':'No checkpoint exists; region reset to undefined.'); render(); });
-$('closeButton').addEventListener('click',()=>{ const r=current(); if(r.points.length<3){announce('At least three points are required to close a polygon.');return;} r.closed=true;r.status='PROVISIONAL';r.humanReviewStatus='AWAITING HUMAN APPROVAL';r.checkpoint=r.points.map(p=>({...p}));announce('Polygon closed as PROVISIONAL and saved as the reset checkpoint.');render(); });
-$('visibilityButton').addEventListener('click',()=>{ current().visible=!current().visible; render(); });
+$('expertNote').addEventListener('input',e=>{ current().note=e.target.value; hasUnexportedWork=true; refreshOutput(); });
+$('undoButton').addEventListener('click',()=>{ const r=current(); r.points.pop(); hasUnexportedWork=true; markEdited(r); announce('Most recent point deleted.'); render(); });
+$('clearButton').addEventListener('click',()=>{ const r=current(); r.points=[]; r.closed=false; r.status='UNDEFINED'; r.humanReviewStatus='NOT REVIEWED'; hasUnexportedWork=true; announce('Current region cleared. Its last closed checkpoint remains available to Reset.'); render(); });
+$('resetButton').addEventListener('click',()=>{ const r=current(); r.points=r.checkpoint.map(p=>({...p})); r.closed=r.points.length>=3; r.status=r.points.length?'PROVISIONAL':'UNDEFINED'; r.humanReviewStatus='NOT REVIEWED'; hasUnexportedWork=true; announce(r.points.length?'Region reset to its last closed checkpoint.':'No checkpoint exists; region reset to undefined.'); render(); });
+$('closeButton').addEventListener('click',()=>{ const r=current(); if(r.points.length<3){announce('At least three points are required to close a polygon.');return;} r.closed=true;r.status='PROVISIONAL';r.humanReviewStatus='AWAITING HUMAN APPROVAL';r.checkpoint=r.points.map(p=>({...p}));hasUnexportedWork=true;announce('Polygon closed as PROVISIONAL and saved as the reset checkpoint.');render(); });
+$('visibilityButton').addEventListener('click',()=>{ current().visible=!current().visible; hasUnexportedWork=true; render(); });
+$('handlesButton').addEventListener('click',()=>{ handlesVisible=!handlesVisible; draggingIndex=null; render(); announce(`Vertex handles ${handlesVisible?'shown':'hidden'}. Stored geometry is unchanged.`); });
 $('opacityControl').addEventListener('input',e=>{ $('opacityValue').textContent=`${e.target.value}%`; render(); });
-$('approveButton').addEventListener('click',()=>{ const r=current(); if(!r.closed || r.points.length<3){announce('Close a polygon with at least three points before explicit approval.');return;} r.status='HUMAN-APPROVED';r.humanReviewStatus='HUMAN APPROVED BY EXPLICIT CONTROL';announce('Expert action recorded: current region marked HUMAN-APPROVED. Inspect and export the data.');render(); });
-$('reopenButton').addEventListener('click',()=>{ const r=current(); if(!r.points.length){announce('This region is undefined.');return;} r.status='PROVISIONAL';r.humanReviewStatus='AWAITING HUMAN APPROVAL';announce('Current region returned to PROVISIONAL.');render(); });
-function exportData(){ return {schemaVersion:'EXP-CER-001-calibration-v2',sourceImage:'games/cerebellum/assets/cerebellum-game-atlas-v1.png',atlasStatus:'PROVISIONAL — HUMAN ANATOMICAL REVIEW REQUIRED',governance:'Human-authored geometry; HUMAN-APPROVED requires explicit expert action.',overlapPolicy:OVERLAP_POLICY,regions:Object.values(regions).map(({checkpoint,...r})=>({...r,points:r.points.map(p=>({x:rounded(p.x),y:rounded(p.y)}))}))}; }
+$('approveButton').addEventListener('click',()=>{ const r=current(); if(!r.closed || r.points.length<3){announce('Close a polygon with at least three points before explicit approval.');return;} r.status='HUMAN-APPROVED';r.humanReviewStatus='HUMAN APPROVED BY EXPLICIT CONTROL';hasUnexportedWork=true;announce('Expert action recorded: current region marked HUMAN-APPROVED. Inspect and export the data.');render(); });
+$('reopenButton').addEventListener('click',()=>{ const r=current(); if(!r.points.length){announce('This region is undefined.');return;} r.status='PROVISIONAL';r.humanReviewStatus='AWAITING HUMAN APPROVAL';hasUnexportedWork=true;announce('Current region returned to PROVISIONAL.');render(); });
+function exportData(){ return {schemaVersion:SCHEMA_VERSION,sourceImage:EXPECTED_SOURCE_IMAGE,atlasStatus:'PROVISIONAL — HUMAN ANATOMICAL REVIEW REQUIRED',governance:'Human-authored geometry; HUMAN-APPROVED requires explicit expert action.',overlapPolicy:OVERLAP_POLICY,regions:Object.values(regions).map(({checkpoint,...r})=>({...r,points:r.points.map(p=>({x:p.x,y:p.y}))}))}; }
 function refreshOutput(){ const data=exportData(), r=current(); $('exportOutput').textContent=`CURRENT: ${r.view.toUpperCase()} VIEW — ${r.frameworkName} — ${r.targetName}\nStatus: ${r.status}; review: ${r.humanReviewStatus}; ${r.points.length} normalized point(s)\n\n${JSON.stringify(data,null,2)}`; }
 $('refreshOutputButton').addEventListener('click',()=>{refreshOutput();announce('Readable summary refreshed.');});
-$('copyButton').addEventListener('click',async()=>{ const text=JSON.stringify(exportData(),null,2); try{await navigator.clipboard.writeText(text);announce('Calibration JSON copied to the clipboard.');}catch(_){$('exportOutput').textContent=text;$('exportOutput').focus?.();announce('Clipboard access was unavailable. JSON is displayed below for manual copying.');} });
+$('copyButton').addEventListener('click',async()=>{ const text=JSON.stringify(exportData(),null,2); try{await navigator.clipboard.writeText(text);hasUnexportedWork=false;announce('Calibration JSON copied to the clipboard. This copy is the current manual backup.');}catch(_){$('exportOutput').textContent=text;$('exportOutput').focus?.();announce('Clipboard access was unavailable. JSON is displayed below for manual copying.');} });
+function validateImport(data){
+  const errors=[];
+  if(!data || typeof data!=='object' || Array.isArray(data)) return {errors:['Top-level JSON value must be an object.']};
+  if(data.schemaVersion!==SCHEMA_VERSION) errors.push(`schemaVersion must be ${SCHEMA_VERSION}.`);
+  if(data.sourceImage!==EXPECTED_SOURCE_IMAGE) errors.push(`Source-image mismatch: sourceImage must be ${EXPECTED_SOURCE_IMAGE}.`);
+  if('atlasStatus' in data && typeof data.atlasStatus!=='string') errors.push('atlasStatus must be a string when present.');
+  if(!Array.isArray(data.regions)) errors.push('regions must be an array.');
+  const imported={}, seen=new Set();
+  if(Array.isArray(data.regions)) data.regions.forEach((region,index)=>{
+    const label=`regions[${index}]`;
+    if(!region || typeof region!=='object' || Array.isArray(region)){errors.push(`${label} must be an object.`);return;}
+    if(!Object.hasOwn(FRAMEWORKS,region.framework)) errors.push(`${label}.framework is unknown.`);
+    if(!VIEWS.includes(region.view)) errors.push(`${label}.view is unknown.`);
+    if(!FRAMEWORKS[region.framework]?.targets || !Object.hasOwn(FRAMEWORKS[region.framework].targets,region.target)) errors.push(`${label}.target is unknown for its framework.`);
+    const key=`${region.view}:${region.framework}:${region.target}`;
+    if(seen.has(key)) errors.push(`${label} duplicates region ${key}.`); else seen.add(key);
+    if(region.coordinateSystem!=='normalized-image-relative') errors.push(`${label}.coordinateSystem must be normalized-image-relative.`);
+    if(!['UNDEFINED','PROVISIONAL','HUMAN-APPROVED'].includes(region.status)) errors.push(`${label}.status is invalid.`);
+    if(typeof region.humanReviewStatus!=='string' || !region.humanReviewStatus.trim()) errors.push(`${label}.humanReviewStatus must be a non-empty string.`);
+    if(!Array.isArray(region.points)) errors.push(`${label}.points must be an array.`);
+    else region.points.forEach((point,pointIndex)=>{ if(!point || typeof point!=='object' || typeof point.x!=='number' || !Number.isFinite(point.x) || typeof point.y!=='number' || !Number.isFinite(point.y)) errors.push(`${label}.points[${pointIndex}] must contain finite numeric x and y values.`); else if(point.x<0 || point.x>1 || point.y<0 || point.y>1) errors.push(`${label}.points[${pointIndex}] coordinates must be between 0 and 1.`); });
+    if(typeof region.closed!=='boolean') errors.push(`${label}.closed must be boolean.`);
+    if(typeof region.visible!=='boolean') errors.push(`${label}.visible must be boolean.`);
+    if(typeof region.note!=='string') errors.push(`${label}.note must be a string.`);
+    if(!errors.some(error=>error.startsWith(label))) imported[key]=region;
+  });
+  const expectedKeys=Object.keys(regions);
+  if(Array.isArray(data.regions) && (data.regions.length!==expectedKeys.length || expectedKeys.some(key=>!seen.has(key)))) errors.push(`regions must contain each of the ${expectedKeys.length} known view/framework/target combinations exactly once.`);
+  return {errors,imported};
+}
+function importSummary(data){
+  const geometry=data.regions.filter(region=>region.points.length);
+  const lines=[`Source atlas: ${data.sourceImage.split('/').at(-1)}`,`Regions containing geometry: ${geometry.length}`,''];
+  geometry.forEach(region=>lines.push(`${region.view.toUpperCase()} VIEW\n${FRAMEWORKS[region.framework].name}\n${FRAMEWORKS[region.framework].targets[region.target]}\n${region.points.length} points\nStatus: ${region.status}\nHuman review: ${region.humanReviewStatus}\nClosed: ${region.closed?'YES':'NO'}\n`));
+  lines.push(`Other regions: ${data.regions.length-geometry.length} (preserved exactly as imported)`);
+  return lines.join('\n');
+}
+$('importButton').addEventListener('click',()=>{ pendingImport=null; $('importText').value=''; $('importError').textContent=''; $('importSummary').hidden=true; $('confirmImportButton').disabled=true; $('importDialog').showModal(); });
+$('validateImportButton').addEventListener('click',()=>{ pendingImport=null; $('confirmImportButton').disabled=true; $('importSummary').hidden=true; let data; try{data=JSON.parse($('importText').value);}catch(error){$('importError').textContent=`Invalid JSON: ${error.message}\nCurrent calibration data has not been changed.`;return;} const result=validateImport(data); if(result.errors.length){$('importError').textContent=`Import rejected:\n• ${result.errors.join('\n• ')}\nCurrent calibration data has not been changed.`;return;} pendingImport={data,records:result.imported}; $('importError').textContent='Validation passed. Review this summary, then explicitly confirm or cancel.'; $('importSummary').textContent=importSummary(data); $('importSummary').hidden=false; $('confirmImportButton').disabled=false; });
+$('confirmImportButton').addEventListener('click',()=>{ if(!pendingImport)return; Object.entries(pendingImport.records).forEach(([key,source])=>{ const definition=FRAMEWORKS[source.framework]; regions[key]={framework:source.framework,frameworkName:source.frameworkName??definition.name,target:source.target,targetName:source.targetName??definition.targets[source.target],view:source.view,coordinateSystem:source.coordinateSystem,status:source.status,humanReviewStatus:source.humanReviewStatus,note:source.note,points:source.points.map(point=>({x:point.x,y:point.y})),closed:source.closed,visible:source.visible,checkpoint:source.closed?source.points.map(point=>({x:point.x,y:point.y})):[]}; }); pendingImport=null; selectedIndex=null; hoveredIndex=null; hasUnexportedWork=false; $('importDialog').close(); announce('Calibration data imported exactly as supplied. Import is not anatomical approval; review status and open/closed states were preserved.'); render(); });
+$('cancelImportButton').addEventListener('click',()=>{ pendingImport=null; $('importDialog').close(); announce('Import cancelled. Current calibration data is unchanged.'); });
+window.addEventListener('resize',updateHandleAppearance);
+window.addEventListener('beforeunload',event=>{ if(hasUnexportedWork && Object.values(regions).some(region=>region.points.length)){event.preventDefault();event.returnValue='';} });
 populateTargets();
 attemptImageSource(0);
 render();
