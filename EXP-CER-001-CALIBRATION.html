@@ -30,7 +30,11 @@ button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-vis
 .workspace { min-width:0; padding:1rem; }
 .context { display:flex; flex-wrap:wrap; gap:.6rem 1.25rem; align-items:center; margin-bottom:.7rem; }
 .context strong { color:var(--navy); }
-.stage { position:relative; width:100%; overflow:hidden; border:2px solid #536474; background:#d8dde1; touch-action:none; }
+.zoom-controls { display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; margin:.75rem 0; }
+.zoom-controls button { width:auto; min-width:4.25rem; margin:0; }
+.zoom-controls button[aria-pressed="true"] { color:white; background:var(--navy); }
+.viewport { width:100%; max-height:75vh; overflow:auto; border:2px solid #536474; background:#d8dde1; }
+.stage { position:relative; width:100%; min-width:1px; overflow:hidden; background:#d8dde1; touch-action:none; }
 .stage img { display:block; width:100%; height:auto; object-fit:contain; user-select:none; -webkit-user-drag:none; }
 .stage svg { position:absolute; inset:0; width:100%; height:100%; }
 .region-shape { stroke:#002f51; stroke-width:.004; vector-effect:non-scaling-stroke; }
@@ -39,6 +43,7 @@ button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-vis
 .handle:focus { fill:var(--focus); outline:none; }
 .help { margin:.7rem 0 0; font-size:.92rem; }
 output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-space:pre-wrap; overflow-wrap:anywhere; border:1px solid #8d9aa6; background:#f8fafb; font:12px/1.45 ui-monospace,monospace; }
+.coordinate-readout { display:grid; grid-template-columns:repeat(2,minmax(11rem,1fr)); gap:.25rem 1rem; padding:.6rem; border:1px solid #8d9aa6; background:#f8fafb; font:600 14px/1.4 ui-monospace,monospace; }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 @media (max-width:820px) { main { grid-template-columns:1fr; } .panel { order:2; } }
 @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto!important; } }
@@ -46,10 +51,12 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
 </head>
 <body>
 <header>
-  <div class="banner">HUMAN ANATOMICAL CALIBRATION REQUIRED</div>
-  <div class="banner">EXPERT REVIEW TOOL — NOT FOR LEARNER USE</div>
+  <div class="banner">PROVISIONAL GAME ATLAS — HUMAN ANATOMICAL REVIEW REQUIRED</div>
+  <div class="banner">EXPERT CALIBRATION TOOL — NOT FOR LEARNER USE</div>
   <h1>EXP-CER-001 Region Calibration Workbench</h1>
   <p>Define image-relative region geometry. No anatomical boundary is supplied or assumed by this tool.</p>
+  <p>The illustration is a provisional game-development asset. Some textual labels may require later correction. Interactive anatomical boundaries are defined only through explicit human-expert calibration.</p>
+  <p><strong>HUMAN ANATOMICAL CALIBRATION REQUIRED — successful image loading does not constitute anatomical validation.</strong></p>
 </header>
 <main>
   <aside class="panel" aria-label="Calibration controls">
@@ -64,7 +71,7 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
       <label for="targetSelect">Anatomical target</label>
       <select id="targetSelect">
         <option value="anterior-lobe">Anterior lobe</option>
-        <option value="posterior-lobe">Posterior lobe</option>
+        <option value="posterior-lobe">Middle / posterior lobe</option>
         <option value="flocculonodular-lobe">Flocculonodular lobe</option>
         <option value="vermis">Vermis</option>
         <option value="paravermis-intermediate-zone">Paravermis / intermediate zone</option>
@@ -100,14 +107,33 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
     <div class="context">
       <span>Current layer: <strong id="currentView">SUPERIOR VIEW</strong></span>
       <span>Target: <strong id="currentTarget">Anterior lobe</strong></span>
-      <span>Orientation: use the printed labels in the complete source plate; the image is not cropped or distorted.</span>
+      <span>Orientation: inspect the complete atlas; printed labels are provisional and are not anatomical calibration data.</span>
     </div>
     <p class="status" id="imageLoadStatus" role="status" aria-live="polite">Loading cerebellum source illustration…</p>
-    <div class="stage" id="stage">
-      <img id="sourceImage" alt="Human-supplied cerebellum illustration containing superior and inferior views">
-      <svg id="overlay" viewBox="0 0 1 1" preserveAspectRatio="none" role="group" aria-label="Editable normalized polygon overlay"></svg>
+    <div class="zoom-controls" role="group" aria-label="Display zoom controls">
+      <strong>Display zoom:</strong>
+      <button type="button" data-zoom="fit" aria-pressed="true">Fit</button>
+      <button type="button" data-zoom="1">100%</button>
+      <button type="button" data-zoom="1.25">125%</button>
+      <button type="button" data-zoom="1.5">150%</button>
+      <button type="button" data-zoom="2">200%</button>
+      <button id="zoomOutButton" type="button" aria-label="Zoom out">Zoom Out</button>
+      <button id="zoomInButton" type="button" aria-label="Zoom in">Zoom In</button>
+      <span id="zoomStatus">Fit</span>
     </div>
-    <p class="help"><strong>Instructions:</strong> Select the layer and target, then click the appropriate anatomy in the source plate to add points. Drag a visible vertex to reposition it, or focus it with Tab and use the arrow keys (Shift for larger steps). “Close polygon” records a reset checkpoint. The superior/inferior selector changes the data layer; the complete plate remains visible so no anatomy is cropped. Only calibrate a target on a view when you judge it anatomically suitable.</p>
+    <div class="coordinate-readout" aria-live="polite">
+      <span>Normalized X: <strong id="coordinateX">0.0000</strong></span>
+      <span>Normalized Y: <strong id="coordinateY">0.0000</strong></span>
+      <span id="coordinateContext">Cursor position (normalized image-relative)</span>
+      <span id="pixelCoordinates">Image pixels: —</span>
+    </div>
+    <div class="viewport" id="viewport" tabindex="0" aria-label="Scrollable calibration viewport">
+      <div class="stage" id="stage">
+        <img id="sourceImage" alt="Provisional cerebellum game atlas containing complete superior and inferior views">
+        <svg id="overlay" viewBox="0 0 1 1" preserveAspectRatio="none" role="group" aria-label="Editable normalized polygon overlay"></svg>
+      </div>
+    </div>
+    <p class="help"><strong>Instructions:</strong> Select the layer and target, then click the appropriate anatomy in the complete atlas to add points. Click or focus a visible vertex to select it; only that human-selected vertex can be moved with arrow keys (Shift for a larger step). Zoom changes display size only and never stored normalized coordinates. “Close polygon” records a reset checkpoint. The superior/inferior selector changes only the metadata layer; it does not crop or segment the atlas.</p>
     <h3>Readable summary and JSON</h3>
     <output id="exportOutput" aria-live="polite"></output>
   </section>
@@ -115,15 +141,15 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
 <script>
 'use strict';
 const TARGETS = {
-  'anterior-lobe':'Anterior lobe', 'posterior-lobe':'Posterior lobe',
+  'anterior-lobe':'Anterior lobe', 'posterior-lobe':'Middle / posterior lobe',
   'flocculonodular-lobe':'Flocculonodular lobe', 'vermis':'Vermis',
   'paravermis-intermediate-zone':'Paravermis / intermediate zone',
   'lateral-hemisphere':'Lateral hemisphere'
 };
 const VIEWS = ['superior','inferior'];
 const IMAGE_SOURCES = [
-  '../source-material/cerebellum-netters.jpg',
-  'cerebellum-netters.jpg'
+  '../assets/cerebellum-game-atlas-v1.png',
+  'cerebellum-game-atlas-v1.png'
 ];
 const regions = Object.fromEntries(VIEWS.flatMap(view => Object.keys(TARGETS).map(target => [`${view}:${target}`, {
   target, targetName:TARGETS[target], view, coordinateSystem:'normalized-image-relative', status:'UNDEFINED',
@@ -132,7 +158,9 @@ const regions = Object.fromEntries(VIEWS.flatMap(view => Object.keys(TARGETS).ma
 const $ = id => document.getElementById(id);
 const overlay=$('overlay'), stage=$('stage'), sourceImage=$('sourceImage'), viewSelect=$('viewSelect'), targetSelect=$('targetSelect');
 let draggingIndex=null;
+let selectedIndex=null;
 let imageSourceIndex=0;
+let zoomMode='fit';
 const current=()=>regions[`${viewSelect.value}:${targetSelect.value}`];
 const clamp=n=>Math.max(0,Math.min(1,n));
 const rounded=n=>Number(n.toFixed(6));
@@ -148,13 +176,26 @@ sourceImage.addEventListener('load',()=>{
   const fallbackNotice=imageSourceIndex===1
     ? 'Canonical repository path unavailable in this preview environment. Same-directory preview image loaded successfully.\n'
     : '';
-  $('imageLoadStatus').textContent=`SOURCE IMAGE LOADED SUCCESSFULLY\n${fallbackNotice}Path: ${source}\nNatural dimensions: ${sourceImage.naturalWidth} × ${sourceImage.naturalHeight} px\nDisplay mode: aspect ratio preserved; no cropping.`;
+  $('imageLoadStatus').textContent=`SOURCE IMAGE LOADED SUCCESSFULLY\n${fallbackNotice}Loaded path: ${source}\nAsset: cerebellum-game-atlas-v1.png\nNatural dimensions: ${sourceImage.naturalWidth} × ${sourceImage.naturalHeight} px\nAspect ratio preserved: YES\nCropping: NONE\nHUMAN ANATOMICAL CALIBRATION REQUIRED — successful image loading does not constitute anatomical validation.`;
+  applyZoom();
 });
 sourceImage.addEventListener('error',()=>{
   if(imageSourceIndex+1<IMAGE_SOURCES.length){ attemptImageSource(imageSourceIndex+1); return; }
   $('imageLoadStatus').textContent=`SOURCE IMAGE FAILED TO LOAD\nAttempted paths:\n- ${IMAGE_SOURCES.join('\n- ')}`;
 });
 function pointerPosition(event){ const r=overlay.getBoundingClientRect(); return {x:rounded(clamp((event.clientX-r.left)/r.width)),y:rounded(clamp((event.clientY-r.top)/r.height))}; }
+function showCoordinates(point,context='Cursor position'){
+  $('coordinateX').textContent=point.x.toFixed(4); $('coordinateY').textContent=point.y.toFixed(4);
+  $('coordinateContext').textContent=`${context} (normalized image-relative)`;
+  $('pixelCoordinates').textContent=sourceImage.naturalWidth ? `Image pixels: ${Math.round(point.x*sourceImage.naturalWidth)}, ${Math.round(point.y*sourceImage.naturalHeight)}` : 'Image pixels: —';
+}
+function applyZoom(){
+  if(zoomMode==='fit') stage.style.width='100%';
+  else if(sourceImage.naturalWidth) stage.style.width=`${sourceImage.naturalWidth*zoomMode}px`;
+  document.querySelectorAll('[data-zoom]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.zoom===String(zoomMode))));
+  $('zoomStatus').textContent=zoomMode==='fit'?'Fit':`${Math.round(zoomMode*100)}%`;
+}
+function setZoom(value){ zoomMode=value; applyZoom(); announce(`Display zoom set to ${zoomMode==='fit'?'Fit':`${Math.round(zoomMode*100)}%`}. Stored normalized coordinates are unchanged.`); }
 function setPoint(index,p){ const region=current(); region.points[index]={x:rounded(clamp(p.x)),y:rounded(clamp(p.y))}; if(region.status==='HUMAN-APPROVED'){ region.status='PROVISIONAL'; region.humanReviewStatus='REVIEW REQUIRED AFTER EDIT'; } render(); }
 function render(){
   const region=current(); overlay.replaceChildren();
@@ -165,7 +206,7 @@ function render(){
     shape.setAttribute('class',region.closed?'region-shape':'draft-line');
     shape.setAttribute('fill',region.closed?'#00a6d6':'none'); shape.setAttribute('fill-opacity',String(Number($('opacityControl').value)/100));
     overlay.append(shape);
-    region.points.forEach((p,index)=>{ const h=document.createElementNS(ns,'circle'); h.setAttribute('cx',p.x); h.setAttribute('cy',p.y); h.setAttribute('r','.009'); h.setAttribute('class','handle'); h.setAttribute('tabindex','0'); h.setAttribute('role','button'); h.setAttribute('aria-label',`Vertex ${index+1} at x ${p.x}, y ${p.y}`); h.dataset.index=index; overlay.append(h); });
+    region.points.forEach((p,index)=>{ const h=document.createElementNS(ns,'circle'); h.setAttribute('cx',p.x); h.setAttribute('cy',p.y); h.setAttribute('r','.009'); h.setAttribute('class','handle'); h.setAttribute('tabindex','0'); h.setAttribute('role','button'); h.setAttribute('aria-label',`Vertex ${index+1} at x ${p.x}, y ${p.y}`); h.setAttribute('aria-pressed',String(index===selectedIndex)); h.dataset.index=index; overlay.append(h); });
   }
   $('regionStatus').textContent=region.status; $('reviewStatus').textContent=region.humanReviewStatus; $('pointCount').textContent=region.points.length;
   $('expertNote').value=region.note; $('currentView').textContent=`${region.view.toUpperCase()} VIEW`; $('currentTarget').textContent=region.targetName;
@@ -173,11 +214,15 @@ function render(){
   refreshOutput();
 }
 function markEdited(region){ region.closed=false; region.status=region.points.length?'PROVISIONAL':'UNDEFINED'; region.humanReviewStatus=region.humanReviewStatus==='HUMAN APPROVED'?'REVIEW REQUIRED AFTER EDIT':'NOT REVIEWED'; }
-overlay.addEventListener('pointerdown',e=>{ if(e.target.classList.contains('handle')){ draggingIndex=Number(e.target.dataset.index); overlay.setPointerCapture(e.pointerId); e.preventDefault(); return; } const region=current(); region.points.push(pointerPosition(e)); markEdited(region); announce(`Point ${region.points.length} added using normalized image coordinates.`); render(); });
-overlay.addEventListener('pointermove',e=>{ if(draggingIndex!==null) setPoint(draggingIndex,pointerPosition(e)); });
+overlay.addEventListener('pointerdown',e=>{ if(e.target.classList.contains('handle')){ draggingIndex=Number(e.target.dataset.index); selectedIndex=draggingIndex; showCoordinates(current().points[selectedIndex],`Selected vertex ${selectedIndex+1}`); overlay.setPointerCapture(e.pointerId); e.preventDefault(); return; } const region=current(); const point=pointerPosition(e); region.points.push(point); selectedIndex=region.points.length-1; showCoordinates(point,`Selected vertex ${selectedIndex+1}`); markEdited(region); announce(`Point ${region.points.length} added using normalized image coordinates.`); render(); });
+overlay.addEventListener('pointermove',e=>{ const point=pointerPosition(e); if(draggingIndex!==null){ setPoint(draggingIndex,point); showCoordinates(current().points[draggingIndex],`Selected vertex ${draggingIndex+1}`); } else showCoordinates(point); });
 overlay.addEventListener('pointerup',()=>{ draggingIndex=null; });
-overlay.addEventListener('keydown',e=>{ if(!e.target.classList.contains('handle') || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return; e.preventDefault(); const i=Number(e.target.dataset.index), p={...current().points[i]}, step=e.shiftKey ? .01 : .002; if(e.key==='ArrowLeft')p.x-=step;if(e.key==='ArrowRight')p.x+=step;if(e.key==='ArrowUp')p.y-=step;if(e.key==='ArrowDown')p.y+=step;setPoint(i,p); overlay.querySelector(`[data-index="${i}"]`)?.focus(); });
-[viewSelect,targetSelect].forEach(control=>control.addEventListener('change',render));
+overlay.addEventListener('focusin',e=>{ if(!e.target.classList.contains('handle'))return; selectedIndex=Number(e.target.dataset.index); showCoordinates(current().points[selectedIndex],`Selected vertex ${selectedIndex+1}`); });
+overlay.addEventListener('keydown',e=>{ if(!e.target.classList.contains('handle') || selectedIndex===null || Number(e.target.dataset.index)!==selectedIndex || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return; e.preventDefault(); const i=selectedIndex, p={...current().points[i]}, step=e.shiftKey ? .01 : .002; if(e.key==='ArrowLeft')p.x-=step;if(e.key==='ArrowRight')p.x+=step;if(e.key==='ArrowUp')p.y-=step;if(e.key==='ArrowDown')p.y+=step;setPoint(i,p);showCoordinates(current().points[i],`Selected vertex ${i+1}`);overlay.querySelector(`[data-index="${i}"]`)?.focus(); });
+[viewSelect,targetSelect].forEach(control=>control.addEventListener('change',()=>{selectedIndex=null;render();}));
+document.querySelectorAll('[data-zoom]').forEach(button=>button.addEventListener('click',()=>setZoom(button.dataset.zoom==='fit'?'fit':Number(button.dataset.zoom))));
+$('zoomInButton').addEventListener('click',()=>setZoom(zoomMode==='fit'?1.25:Math.min(2,rounded(zoomMode+.25))));
+$('zoomOutButton').addEventListener('click',()=>setZoom(zoomMode==='fit'?1:Math.max(1,rounded(zoomMode-.25))));
 $('expertNote').addEventListener('input',e=>{ current().note=e.target.value; refreshOutput(); });
 $('undoButton').addEventListener('click',()=>{ const r=current(); r.points.pop(); markEdited(r); announce('Most recent point deleted.'); render(); });
 $('clearButton').addEventListener('click',()=>{ const r=current(); r.points=[]; r.closed=false; r.status='UNDEFINED'; r.humanReviewStatus='NOT REVIEWED'; announce('Current region cleared. Its last closed checkpoint remains available to Reset.'); render(); });
@@ -187,7 +232,7 @@ $('visibilityButton').addEventListener('click',()=>{ current().visible=!current(
 $('opacityControl').addEventListener('input',e=>{ $('opacityValue').textContent=`${e.target.value}%`; render(); });
 $('approveButton').addEventListener('click',()=>{ const r=current(); if(!r.closed || r.points.length<3){announce('Close a polygon with at least three points before explicit approval.');return;} r.status='HUMAN-APPROVED';r.humanReviewStatus='HUMAN APPROVED BY EXPLICIT CONTROL';announce('Expert action recorded: current region marked HUMAN-APPROVED. Inspect and export the data.');render(); });
 $('reopenButton').addEventListener('click',()=>{ const r=current(); if(!r.points.length){announce('This region is undefined.');return;} r.status='PROVISIONAL';r.humanReviewStatus='AWAITING HUMAN APPROVAL';announce('Current region returned to PROVISIONAL.');render(); });
-function exportData(){ return {schemaVersion:'EXP-CER-001-calibration-v1',sourceImage:'games/cerebellum/source-material/cerebellum-netters.jpg',governance:'Human-authored geometry; HUMAN-APPROVED requires explicit expert action.',regions:Object.values(regions).map(({checkpoint,...r})=>({...r,points:r.points.map(p=>({x:rounded(p.x),y:rounded(p.y)}))}))}; }
+function exportData(){ return {schemaVersion:'EXP-CER-001-calibration-v1',sourceImage:'games/cerebellum/assets/cerebellum-game-atlas-v1.png',atlasStatus:'PROVISIONAL — HUMAN ANATOMICAL REVIEW REQUIRED',governance:'Human-authored geometry; HUMAN-APPROVED requires explicit expert action.',regions:Object.values(regions).map(({checkpoint,...r})=>({...r,points:r.points.map(p=>({x:rounded(p.x),y:rounded(p.y)}))}))}; }
 function refreshOutput(){ const data=exportData(), r=current(); $('exportOutput').textContent=`CURRENT: ${r.view.toUpperCase()} VIEW — ${r.targetName}\nStatus: ${r.status}; review: ${r.humanReviewStatus}; ${r.points.length} normalized point(s)\n\n${JSON.stringify(data,null,2)}`; }
 $('refreshOutputButton').addEventListener('click',()=>{refreshOutput();announce('Readable summary refreshed.');});
 $('copyButton').addEventListener('click',async()=>{ const text=JSON.stringify(exportData(),null,2); try{await navigator.clipboard.writeText(text);announce('Calibration JSON copied to the clipboard.');}catch(_){$('exportOutput').textContent=text;$('exportOutput').focus?.();announce('Clipboard access was unavailable. JSON is displayed below for manual copying.');} });
