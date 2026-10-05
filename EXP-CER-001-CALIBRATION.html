@@ -64,6 +64,7 @@ output { display:block; max-height:16rem; overflow:auto; padding:.7rem; white-sp
   <h1>EXP-CER-001 Region Calibration Workbench</h1>
   <p>Define image-relative region geometry. No anatomical boundary is supplied or assumed by this tool.</p>
   <p>The illustration is a provisional game-development asset. Some textual labels may require later correction. Interactive anatomical boundaries are defined only through explicit human-expert calibration.</p>
+  <p><strong>Anatomical-region calibration and label-position calibration are independent expert processes. Raster labels are passive references only; this workbench does not extract, infer, or calibrate their positions.</strong></p>
   <p><strong>Cerebellar regions are organised using overlapping anatomical classification frameworks. Lobar and mediolateral territories may legitimately occupy the same image coordinates. Overlap between frameworks is intentional and is not a calibration error.</strong></p>
   <p><strong>HUMAN ANATOMICAL CALIBRATION REQUIRED — successful image loading does not constitute anatomical validation.</strong></p>
 </header>
@@ -179,11 +180,11 @@ const FRAMEWORKS = {
 };
 const OVERLAP_POLICY = 'Cross-framework overlap is intentional; coordinates remain independent and unchanged.';
 const VIEWS = ['superior','inferior'];
-const EXPECTED_SOURCE_IMAGE = 'games/cerebellum/assets/cerebellum-game-atlas-v1.png';
+const EXPECTED_SOURCE_IMAGE = 'games/cerebellum/assets/cerebellum-game-atlas-v2.png';
 const SCHEMA_VERSION = 'EXP-CER-001-calibration-v2';
 const IMAGE_SOURCES = [
-  '../assets/cerebellum-game-atlas-v1.png',
-  'cerebellum-game-atlas-v1.png'
+  '../assets/cerebellum-game-atlas-v2.png',
+  'cerebellum-game-atlas-v2.png'
 ];
 const regions = Object.fromEntries(VIEWS.flatMap(view => Object.entries(FRAMEWORKS).flatMap(([framework,definition]) => Object.entries(definition.targets).map(([target,targetName]) => [`${view}:${framework}:${target}`, {
   framework, frameworkName:definition.name, target, targetName, view, coordinateSystem:'normalized-image-relative', status:'UNDEFINED',
@@ -219,7 +220,7 @@ sourceImage.addEventListener('load',()=>{
   const fallbackNotice=imageSourceIndex===1
     ? 'Canonical repository path unavailable in this preview environment. Same-directory preview image loaded successfully.\n'
     : '';
-  $('imageLoadStatus').textContent=`SOURCE IMAGE LOADED SUCCESSFULLY\n${fallbackNotice}Loaded path: ${source}\nAsset: cerebellum-game-atlas-v1.png\nNatural dimensions: ${sourceImage.naturalWidth} × ${sourceImage.naturalHeight} px\nAspect ratio preserved: YES\nCropping: NONE\nHUMAN ANATOMICAL CALIBRATION REQUIRED — successful image loading does not constitute anatomical validation.`;
+  $('imageLoadStatus').textContent=`SOURCE IMAGE LOADED SUCCESSFULLY\n${fallbackNotice}Loaded path: ${source}\nAsset: cerebellum-game-atlas-v2.png\nNatural dimensions: ${sourceImage.naturalWidth} × ${sourceImage.naturalHeight} px\nAspect ratio preserved: YES\nCropping: NONE\nHUMAN ANATOMICAL CALIBRATION REQUIRED — successful image loading does not constitute anatomical validation.`;
   applyZoom();
 });
 sourceImage.addEventListener('error',()=>{
